@@ -4,6 +4,32 @@
  * pass messages through this bus instead of coupling the two.
  */
 
+export interface TechSnapshot {
+  id: string;
+  label: string;
+  era: string;
+  desc: string;
+  progress: number;
+  cost: number;
+  done: boolean;
+  active: boolean;
+}
+
+export interface RivalSnapshot {
+  awakened: boolean;
+  banished: boolean;
+  name: string;
+  score: number;
+  playerScore: number;
+  margin: number;
+  /** Ticks player has been ahead by the required margin. */
+  aheadTicks: number;
+  /** Ticks needed to banish. */
+  aheadTicksTarget: number;
+  /** Countdown until next attack (ticks). */
+  nextAttackIn: number;
+}
+
 export type GameEvent =
   | {
       type: 'state';
@@ -38,7 +64,9 @@ export type GameEvent =
       y: number;
       w: number;
       h: number;
-    };
+    }
+  | { type: 'tech'; nodes: TechSnapshot[] }
+  | { type: 'rival'; snapshot: RivalSnapshot };
 
 export interface SelectionInfo {
   kind: 'tile' | 'creature' | 'kingdom';

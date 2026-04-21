@@ -16,6 +16,11 @@ import {
   CAMERA_PAN_SPEED,
   QUEST_AWAKENING_TARGET,
   QUEST_FAITH_TARGET,
+  QUEST_PORTAL_TARGET,
+  QUEST_RIVAL_MARGIN,
+  TECH_TREE,
+  RIVAL_TICK_INTERVAL,
+  RIVAL_SCORE_PER_TICK,
 } from '../config.ts';
 import { TileMap } from '../world/TileMap.ts';
 import { BIOMES, type BiomeId, BIOME_ORDER } from '../world/Biomes.ts';
@@ -148,6 +153,7 @@ export class WorldScene extends Phaser.Scene {
     this.emitState();
     this.updateMinimap();
     this.emitCameraViewport();
+    this.emitTechSnapshot();
 
     // Kick off chapter 1 quest.
     bus.emit({
@@ -258,16 +264,23 @@ export class WorldScene extends Phaser.Scene {
       this.addCreatureSprite(o);
     }
 
-    // faith + mana + score
+    // faith + mana + score (buffed by completed tech)
     const worshippers = this.countWorshippers();
-    state.addFaith(worshippers * FAITH_PER_TICK_PER_WORSHIPPER);
+    state.addFaith(
+      worshippers * FAITH_PER_TICK_PER_WORSHIPPER *
+        state.buffs.faithPerWorshipperMult,
+    );
     // Small faith decay when there's nobody praying — keeps sandbox honest.
     if (worshippers === 0 && state.faith > 0)
       state.addFaith(-0.05);
-    state.regenMana(MANA_REGEN_PER_TICK);
+    state.regenMana(MANA_REGEN_PER_TICK + state.buffs.manaRegenAdd);
     state.year = Math.floor(this.simTick / 4); // 4 ticks per year
     state.score = Math.floor(state.faith + worshippers * 3 + state.year * 0.5);
     state.updateRank();
+
+    // tech research + rival god side-sim.
+    this.advanceTech(worshippers);
+    this.advanceRival(worshippers);
 
     // era progression — score + worshipper gated (both conditions).
     const currentIdx = ERAS.indexOf(state.era);
@@ -386,6 +399,229 @@ export class WorldScene extends Phaser.Scene {
         });
       }
     }
+    // Ch.3 Nebula Rift: open at least N portals.
+    if (this.questDone.has('first-faith') && !this.questDone.has('portal')) {
+      bus.emit({
+        type: 'quest',
+        id: 'portal',
+        status:
+          state.portalsOpened >= QUEST_PORTAL_TARGET ? 'completed' : 'progress',
+        text: `Nebula Rift — ${state.portalsOpened}/${QUEST_PORTAL_TARGET} portals`,
+        progress: state.portalsOpened,
+        target: QUEST_PORTAL_TARGET,
+      });
+      if (state.portalsOpened >= QUEST_PORTAL_TARGET) {
+        this.questDone.add('portal');
+        bus.emit({
+          type: 'toast',
+          level: 'good',
+          text: 'QUEST DONE — Nebula Rift',
+        });
+        bus.emit({
+          type: 'feed',
+          level: 'meta',
+          text: 'Mystic Battleground seals rupture — the Rift answers your call.',
+        });
+      }
+    }
+    // Ch.4 Rival Pantheon: stay ahead of Morvak by margin for N ticks.
+    if (this.questDone.has('portal') && !this.questDone.has('rival')) {
+      const r = state.rival;
+      const margin = state.score - r.score;
+      const aheadTarget = 16; // ~4 in-game years ahead
+      bus.emit({
+        type: 'quest',
+        id: 'rival',
+        status: r.banished ? 'completed' : 'progress',
+        text: `Rival Pantheon — outscore ${r.name} by ${QUEST_RIVAL_MARGIN} (${Math.max(
+          0,
+          margin,
+        )}/${QUEST_RIVAL_MARGIN}, ${r.aheadTicks}/${aheadTarget} yrs ahead)`,
+        progress: Math.max(0, Math.min(aheadTarget, r.aheadTicks)),
+        target: aheadTarget,
+      });
+      if (r.banished) {
+        this.questDone.add('rival');
+        bus.emit({
+          type: 'toast',
+          level: 'good',
+          text: `QUEST DONE — ${r.name} banished`,
+        });
+      }
+    }
+    // Ch.5 Convergence: ascend into Nebula Awakening era.
+    if (this.questDone.has('rival') && !this.questDone.has('convergence')) {
+      const reached = state.era === 'Nebula Awakening';
+      bus.emit({
+        type: 'quest',
+        id: 'convergence',
+        status: reached ? 'completed' : 'progress',
+        text: `Nebula Convergence — era ${state.era}`,
+      });
+      if (reached) {
+        this.questDone.add('convergence');
+        bus.emit({
+          type: 'toast',
+          level: 'good',
+          text: 'QUEST DONE — Nebula Convergence',
+        });
+        bus.emit({
+          type: 'feed',
+          level: 'meta',
+          text: `The pantheon bows. Your world ascends.`,
+        });
+      }
+    }
+  }
+
+  /** Advance passive tech research for the current era's unlocked node. */
+  private advanceTech(worshippers: number): void {
+    const eraIdx = ERAS.indexOf(state.era);
+    const researchRate = 0.05 + worshippers * 0.25 + state.faith * 0.002;
+    let anyChanged = false;
+    for (const node of TECH_TREE) {
+      const nodeEraIdx = ERAS.indexOf(node.era);
+      const entry = state.tech[node.id]!;
+      if (entry.done) continue;
+      if (nodeEraIdx > eraIdx) continue; // locked, not yet in this era
+      // Researching — add progress.
+      entry.progress = Math.min(node.cost, entry.progress + researchRate);
+      anyChanged = true;
+      if (entry.progress >= node.cost) {
+        entry.done = true;
+        state.applyTechEffect(node.effect);
+        bus.emit({
+          type: 'toast',
+          level: 'good',
+          text: `TECH UNLOCKED — ${node.label}`,
+        });
+        bus.emit({
+          type: 'feed',
+          level: 'meta',
+          text: `Civilization discovered ${node.label} (${node.era} era).`,
+        });
+      }
+    }
+    // Emit a snapshot every ~half-second so the HUD can draw bars.
+    if (anyChanged && this.simTick % 2 === 0) {
+      this.emitTechSnapshot();
+    }
+  }
+
+  private emitTechSnapshot(): void {
+    const eraIdx = ERAS.indexOf(state.era);
+    bus.emit({
+      type: 'tech',
+      nodes: TECH_TREE.map((node) => {
+        const entry = state.tech[node.id]!;
+        const active = ERAS.indexOf(node.era) <= eraIdx;
+        return {
+          id: node.id,
+          label: node.label,
+          era: node.era,
+          desc: node.desc,
+          progress: entry.progress,
+          cost: node.cost,
+          done: entry.done,
+          active,
+        };
+      }),
+    });
+  }
+
+  /** Rival god side-simulation — grows in power, attacks worshippers. */
+  private advanceRival(worshippers: number): void {
+    const r = state.rival;
+    // Wake up after Ch.2 First Faith.
+    if (!r.awakened && this.questDone.has('first-faith')) {
+      r.awakened = true;
+      r.score = Math.max(0, Math.floor(state.score * 0.75));
+      bus.emit({
+        type: 'toast',
+        level: 'bad',
+        text: `RIVAL GOD AWAKENS — ${r.name}`,
+      });
+      bus.emit({
+        type: 'feed',
+        level: 'bad',
+        text: `${r.name} glimpses your ladder. A rival pantheon stirs.`,
+      });
+    }
+    if (!r.awakened || r.banished) return;
+
+    // Passive score growth for the rival.
+    r.score += RIVAL_SCORE_PER_TICK;
+    r.sinceAttack++;
+
+    // Track how long player is clearly ahead; needed to banish Morvak.
+    const aheadTarget = 16;
+    if (state.score - r.score >= QUEST_RIVAL_MARGIN) {
+      r.aheadTicks = Math.min(aheadTarget, r.aheadTicks + 1);
+      if (r.aheadTicks >= aheadTarget) {
+        r.banished = true;
+        bus.emit({
+          type: 'feed',
+          level: 'meta',
+          text: `${r.name} recedes into the void, banished by your faith.`,
+        });
+      }
+    } else {
+      r.aheadTicks = Math.max(0, r.aheadTicks - 1);
+    }
+
+    // Periodic attack on a worshipper cluster.
+    if (r.sinceAttack >= RIVAL_TICK_INTERVAL && worshippers > 0) {
+      r.sinceAttack = 0;
+      this.rivalAttack();
+    }
+
+    bus.emit({
+      type: 'rival',
+      snapshot: {
+        awakened: r.awakened,
+        banished: r.banished,
+        name: r.name,
+        score: Math.floor(r.score),
+        playerScore: state.score,
+        margin: QUEST_RIVAL_MARGIN,
+        aheadTicks: r.aheadTicks,
+        aheadTicksTarget: aheadTarget,
+        nextAttackIn: Math.max(0, RIVAL_TICK_INTERVAL - r.sinceAttack),
+      },
+    });
+  }
+
+  /** Rival strikes a worshipper cluster with a random disaster. */
+  private rivalAttack(): void {
+    // Pick a random alive worshipper as target anchor.
+    const worshipperList = this.creatures.filter(
+      (c) => !c.dead && c.def.faithful && c.def.sentient,
+    );
+    if (worshipperList.length === 0) return;
+    const target = worshipperList[
+      (Math.random() * worshipperList.length) | 0
+    ]!;
+    const kind = Math.random() < 0.5 ? 'quake' : 'fire';
+    const r = kind === 'quake' ? 3 : 2;
+    const dmg = Math.max(
+      1,
+      (kind === 'quake' ? 8 : 5) - state.buffs.defenseAdd,
+    );
+    const tx = Math.floor(target.x);
+    const ty = Math.floor(target.y);
+    const casualties = this.damageArea(tx, ty, r, dmg);
+    this.spawnFx('fx-fire', tx, ty, r, 360);
+    this.cameras.main.shake(320, 0.012);
+    bus.emit({
+      type: 'feed',
+      level: 'bad',
+      text: `${state.rival.name} smites your kin with ${kind.toUpperCase()} at (${tx},${ty}) — ${casualties} fell.`,
+    });
+    bus.emit({
+      type: 'toast',
+      level: 'bad',
+      text: `${state.rival.name} strikes!`,
+    });
   }
 
   private neighborsOf(c: Creature, r: number): Creature[] {
@@ -574,19 +810,20 @@ export class WorldScene extends Phaser.Scene {
       bus.emit({ type: 'toast', level: 'bad', text: 'Not enough mana.' });
       return;
     }
+    let casualties = 0;
     switch (kind) {
       case 'fire':
         this.spawnFx('fx-fire', x, y, 2, 220);
-        this.damageArea(x, y, 2, 5);
+        casualties = this.damageArea(x, y, 2, 5);
         break;
       case 'quake':
-        this.damageArea(x, y, 4, 8);
+        casualties = this.damageArea(x, y, 4, 8);
         this.cameras.main.shake(400, 0.012);
         break;
       case 'meteor':
         this.tileMap.setBiome(x, y, 'lava');
         this.spawnFx('fx-fire', x, y, 3, 400);
-        this.damageArea(x, y, 3, 40);
+        casualties = this.damageArea(x, y, 3, 40);
         this.cameras.main.shake(500, 0.02);
         break;
       case 'flood':
@@ -594,23 +831,33 @@ export class WorldScene extends Phaser.Scene {
           for (let dx = -2; dx <= 2; dx++)
             if (dx * dx + dy * dy <= 4)
               this.tileMap.setBiome(x + dx, y + dy, 'ocean');
+        casualties = this.damageArea(x, y, 2, 3);
         break;
     }
+    const tail = casualties > 0 ? ` — ${casualties} perished.` : '.';
     bus.emit({
       type: 'feed',
       level: 'bad',
-      text: `${kind.toUpperCase()} struck (${x},${y}).`,
+      text: `${kind.toUpperCase()} struck (${x},${y})${tail}`,
     });
     bus.emit({ type: 'toast', level: 'bad', text: `${kind.toUpperCase()}!` });
   }
 
-  private damageArea(x: number, y: number, r: number, dmg: number): void {
+  /** Hit everything in radius `r` for `dmg` HP. Returns number killed. */
+  private damageArea(x: number, y: number, r: number, dmg: number): number {
+    let killed = 0;
+    const effectiveDmg = Math.max(1, dmg - state.buffs.defenseAdd);
     for (const c of this.creatures) {
+      if (c.dead) continue;
       if (Math.hypot(c.x - x, c.y - y) <= r) {
-        c.hp -= dmg;
-        if (c.hp <= 0) c.dead = true;
+        c.hp -= effectiveDmg;
+        if (c.hp <= 0) {
+          c.dead = true;
+          killed++;
+        }
       }
     }
+    return killed;
   }
 
   private spawnFx(key: string, x: number, y: number, r: number, ms: number): void {
@@ -676,6 +923,7 @@ export class WorldScene extends Phaser.Scene {
         y + 0.5 + (Math.random() - 0.5),
       );
     }
+    state.portalsOpened++;
     bus.emit({
       type: 'feed',
       level: 'meta',
@@ -687,12 +935,6 @@ export class WorldScene extends Phaser.Scene {
       type: 'toast',
       level: 'meta',
       text: intentional ? 'NEBULA PORTAL' : 'WILD NEBULA RIFT',
-    });
-    bus.emit({
-      type: 'quest',
-      id: 'portal',
-      status: 'progress',
-      text: 'Nebula portal opened',
     });
   }
 

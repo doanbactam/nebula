@@ -494,6 +494,23 @@ body {
   text-align: right;
 }
 
+/* Rival pantheon card (rank tab) */
+.rival-card {
+  border: 1px solid var(--bad);
+  border-radius: 4px;
+  padding: 8px 10px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 92, 122, 0.10),
+    rgba(255, 92, 122, 0.03)
+  );
+  margin-bottom: 10px;
+  box-shadow: 0 0 0 1px rgba(255, 92, 122, 0.12);
+}
+.quest-item.locked {
+  opacity: 0.55;
+}
+
 /* ---------- BOTTOM BAR ---------- */
 #bottom-bar {
   bottom: 8px;
