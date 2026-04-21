@@ -1,7 +1,8 @@
 import { SPECIES, type SpeciesId } from './species.ts';
 import type { TileMap } from '../world/TileMap.ts';
 import { BIOMES } from '../world/Biomes.ts';
-import { TILE_SIZE } from '../config.ts';
+import { TILE_SIZE, HUNGER_GAIN_PER_TICK, STARVE_THRESHOLD } from '../config.ts';
+import { state } from '../state.ts';
 
 let NEXT_ID = 1;
 
@@ -40,7 +41,7 @@ export class Creature {
   tick(map: TileMap, neighbors: Creature[]): Creature[] {
     if (this.dead) return [];
     this.age++;
-    this.hunger += 1;
+    this.hunger += HUNGER_GAIN_PER_TICK * state.buffs.hungerDecayMult;
 
     const def = this.def;
 
@@ -76,7 +77,7 @@ export class Creature {
 
     // Feed from fertility of current tile (only non-predators).
     const bi = map.biomeAt(Math.floor(this.x), Math.floor(this.y));
-    const fert = BIOMES[bi].fertility;
+    const fert = BIOMES[bi].fertility * state.buffs.fertilityMult;
     if (this.species !== 'wolf' && this.species !== 'dragon') {
       this.hunger = Math.max(0, this.hunger - fert * 2.5);
     }
@@ -104,7 +105,7 @@ export class Creature {
     }
 
     // Starve / age-out
-    if (this.hunger > 30) this.hp -= 1;
+    if (this.hunger > STARVE_THRESHOLD) this.hp -= 1;
     if (this.age > 180 + Math.random() * 60) this.hp -= 1;
     if (this.hp <= 0) {
       this.dead = true;

@@ -10,6 +10,11 @@ export const MAX_MANA = 100;
 export const FAITH_PER_TICK_PER_WORSHIPPER = 0.04;
 export const MANA_REGEN_PER_TICK = 0.6;
 
+/** Base hunger growth per tick before biome fertility is subtracted. */
+export const HUNGER_GAIN_PER_TICK = 0.55;
+/** Threshold above which hunger starts damaging HP. */
+export const STARVE_THRESHOLD = 36;
+
 /** Cost of each god power in mana. */
 export const POWER_COST: Record<string, number> = {
   'fire': 8,
@@ -70,3 +75,83 @@ export const CAMERA_PAN_SPEED = 10;
 export const QUEST_AWAKENING_TARGET = 12;
 /** Quest #2 target: faith value. */
 export const QUEST_FAITH_TARGET = 200;
+/** Quest #3 target: Nebula portals opened. */
+export const QUEST_PORTAL_TARGET = 1;
+/** Quest #4 target: your score must exceed rival by this margin. */
+export const QUEST_RIVAL_MARGIN = 500;
+
+/**
+ * Civ tech tree. Each node is locked to a specific era — it starts
+ * researching passively the moment you enter that era. Progress fills
+ * as a function of sentient worshippers + faith and when full, applies
+ * a permanent buff.
+ */
+export interface TechNode {
+  id: string;
+  label: string;
+  era: Era;
+  /** Effort needed (arbitrary units, compared to accumulated research). */
+  cost: number;
+  /** Short description shown in the Tech tab. */
+  desc: string;
+  /** Buff applied when research completes. */
+  effect: TechEffect;
+}
+export type TechEffect =
+  | { kind: 'fertility'; mult: number }
+  | { kind: 'manaRegen'; add: number }
+  | { kind: 'faithPerWorshipper'; mult: number }
+  | { kind: 'hungerDecay'; mult: number }
+  | { kind: 'defense'; add: number };
+
+export const TECH_TREE: TechNode[] = [
+  {
+    id: 'fire',
+    label: 'Fire Mastery',
+    era: 'Stone',
+    cost: 120,
+    desc: 'Tribes share fire. Hunger grows slower.',
+    effect: { kind: 'hungerDecay', mult: 0.75 },
+  },
+  {
+    id: 'agri',
+    label: 'Agriculture',
+    era: 'Bronze',
+    cost: 320,
+    desc: 'Fertile tiles feed more hungry mouths.',
+    effect: { kind: 'fertility', mult: 1.35 },
+  },
+  {
+    id: 'metal',
+    label: 'Metallurgy',
+    era: 'Iron',
+    cost: 700,
+    desc: 'Sentient races gain a +2 defense pool vs disasters.',
+    effect: { kind: 'defense', add: 2 },
+  },
+  {
+    id: 'runes',
+    label: 'Arcane Runes',
+    era: 'Arcane',
+    cost: 1400,
+    desc: 'Mana regen +0.4/tick, faith flows faster.',
+    effect: { kind: 'manaRegen', add: 0.4 },
+  },
+  {
+    id: 'ascend',
+    label: 'Nebula Ascension',
+    era: 'Nebula Awakening',
+    cost: 3000,
+    desc: 'Worshippers generate 50% more faith. End-game.',
+    effect: { kind: 'faithPerWorshipper', mult: 1.5 },
+  },
+];
+
+/** After this quest completes, the rival god awakens. */
+export const RIVAL_AWAKEN_QUEST = 'first-faith';
+/** Rival god name. */
+export const RIVAL_NAME = 'Morvak';
+/** Ticks between rival god attacks. */
+export const RIVAL_TICK_INTERVAL = 120; // ~30 in-game years
+/** Passive score gain per tick for the rival god. */
+export const RIVAL_SCORE_PER_TICK = 0.6;

@@ -1,5 +1,10 @@
 import { Panel } from './Panel.ts';
-import { bus, type SelectionInfo } from '../game/events.ts';
+import {
+  bus,
+  type SelectionInfo,
+  type TechSnapshot,
+  type RivalSnapshot,
+} from '../game/events.ts';
 
 interface FeedItem {
   t: number;
@@ -38,6 +43,8 @@ const CHAPTERS: QuestItem[] = [
     title: 'Ch.3 · Nebula Rift',
     desc: 'Open a Mystic Battleground portal in the Arcane era.',
     status: 'locked',
+    progress: 0,
+    target: 1,
   },
   {
     id: 'rival',
@@ -54,21 +61,26 @@ const CHAPTERS: QuestItem[] = [
 ];
 
 export function createRightPanel(): Panel {
-  let tab: 'quest' | 'inspector' | 'events' | 'ranking' = 'quest';
+  let tab: 'quest' | 'inspector' | 'events' | 'tech' | 'ranking' = 'quest';
   let selection: SelectionInfo | null = null;
   let bodyEl: HTMLElement | null = null;
   const feed: FeedItem[] = [];
+  let techNodes: TechSnapshot[] = [];
+  let rival: RivalSnapshot | null = null;
+  let playerScore = 0;
 
   const tabs = `
     <div class="tabs">
       <button class="tab" data-tab="quest">Quest</button>
       <button class="tab" data-tab="inspector">Inspector</button>
       <button class="tab" data-tab="events">Events</button>
+      <button class="tab" data-tab="tech">Tech</button>
       <button class="tab" data-tab="ranking">Rank</button>
     </div>
     <div class="tab-panel" data-tab="quest"></div>
     <div class="tab-panel" data-tab="inspector"></div>
     <div class="tab-panel" data-tab="events"></div>
+    <div class="tab-panel" data-tab="tech"></div>
     <div class="tab-panel" data-tab="ranking"></div>
   `;
 
@@ -137,23 +149,89 @@ export function createRightPanel(): Panel {
       .join('');
   }
 
+  function renderTech(): string {
+    if (!techNodes.length) {
+      return `<p>Research begins as soon as your civilization takes shape.</p>`;
+    }
+    return techNodes
+      .map((n) => {
+        const pct = Math.min(100, Math.round((n.progress / n.cost) * 100));
+        const cls = n.done ? 'done' : n.active ? 'active' : 'locked';
+        const badge = n.done
+          ? '<span class="q-badge done">✓ done</span>'
+          : n.active
+          ? '<span class="q-badge active">researching</span>'
+          : '<span class="q-badge">locked</span>';
+        return `
+          <div class="quest-item ${cls}">
+            <div class="q-head">
+              <div class="q-title">${n.label} <span style="color:var(--text-dim);">· ${n.era}</span></div>
+              ${badge}
+            </div>
+            <div class="q-desc">${n.desc}</div>
+            <div class="q-bar"><span style="width:${pct}%"></span></div>
+            <div class="q-prog">${Math.floor(n.progress)} / ${n.cost}</div>
+          </div>`;
+      })
+      .join('');
+  }
+
   function renderRanking(): string {
-    const me = [
+    const you = {
+      name: 'YOU',
+      score: playerScore,
+    };
+    const baseline = [
       { name: 'Aether', score: 9820 },
-      { name: 'Morvak', score: 7210 },
       { name: 'Lithe', score: 4420 },
-      { name: 'YOU', score: -1 /* placeholder */ },
       { name: 'Orin', score: 780 },
     ];
+    const entries = [...baseline, you];
+    if (rival?.awakened && !rival.banished) {
+      entries.push({ name: rival.name + ' (rival)', score: rival.score });
+    } else if (rival?.banished) {
+      entries.push({ name: rival.name + ' (banished)', score: rival.score });
+    }
+    entries.sort((a, b) => b.score - a.score);
+
+    const rows = entries
+      .map((x, i) => {
+        const isYou = x.name === 'YOU';
+        const isRival =
+          rival && (x.name.startsWith(rival.name));
+        const style = isYou
+          ? 'color:var(--accent);'
+          : isRival
+          ? 'color:var(--bad);'
+          : '';
+        return `<p style="${style}">#${i + 1} ${x.name}: ${x.score.toLocaleString()}</p>`;
+      })
+      .join('');
+
+    const rivalBlock =
+      rival?.awakened && !rival.banished
+        ? `<div class="rival-card">
+            <div class="q-title" style="color:var(--bad);">${rival.name}</div>
+            <div class="q-desc">Rival god encroaches. Outscore them by ${rival.margin}.</div>
+            <div class="q-bar"><span style="width:${Math.min(
+              100,
+              Math.round(
+                (rival.aheadTicks / Math.max(1, rival.aheadTicksTarget)) * 100,
+              ),
+            )}%; background:linear-gradient(90deg,var(--bad),var(--gold));"></span></div>
+            <div class="q-prog">${rival.aheadTicks} / ${rival.aheadTicksTarget} yrs ahead · next strike in ${rival.nextAttackIn}t</div>
+          </div>`
+        : rival?.banished
+        ? `<div class="rival-card">
+            <div class="q-title" style="color:var(--good);">${rival.name} banished</div>
+            <div class="q-desc">The rival pantheon has receded. Nebula Convergence beckons.</div>
+          </div>`
+        : '';
+
     return `
       <h4>Nebula Leaderboard (server tick)</h4>
-      ${me
-        .map(
-          (x) => `<p>${x.name === 'YOU' ? '<span style="color:var(--accent);">' : ''}${x.name}</span>: ${
-            x.score === -1 ? '<span id="rank-me-score">0</span>' : x.score
-          }</p>`,
-        )
-        .join('')}
+      ${rivalBlock}
+      ${rows}
       <p style="color:var(--text-dim);font-size:9px;margin-top:8px;">
         Score updates live as Faith and civilization maturity grow.
       </p>
@@ -183,6 +261,7 @@ export function createRightPanel(): Panel {
     get('quest').innerHTML = renderQuest();
     get('inspector').innerHTML = renderInspector();
     get('events').innerHTML = renderEvents();
+    get('tech').innerHTML = renderTech();
     get('ranking').innerHTML = renderRanking();
   }
 
@@ -198,13 +277,19 @@ export function createRightPanel(): Panel {
       if (feed.length > 200) feed.shift();
       if (tab === 'events') refreshAll();
     } else if (ev.type === 'state') {
+      playerScore = ev.score;
       // stamp newest feed items with current year
       if (feed.length > 0) {
         const last = feed[feed.length - 1]!;
         if (last.t === 0) last.t = ev.year;
       }
-      const me = bodyEl?.querySelector<HTMLElement>('#rank-me-score');
-      if (me) me.textContent = ev.score.toLocaleString();
+      if (tab === 'ranking') refreshAll();
+    } else if (ev.type === 'tech') {
+      techNodes = ev.nodes;
+      if (tab === 'tech') refreshAll();
+    } else if (ev.type === 'rival') {
+      rival = ev.snapshot;
+      if (tab === 'ranking' || tab === 'quest') refreshAll();
     } else if (ev.type === 'quest') {
       const q = CHAPTERS.find((c) => c.id === ev.id);
       if (q) {

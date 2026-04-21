@@ -29,11 +29,13 @@ export function createMinimap(): Panel {
     const y = cam.y * WORLD_H;
     const w = Math.max(1, cam.w * WORLD_W);
     const h = Math.max(1, cam.h * WORLD_H);
-    oCtx.strokeStyle = 'rgba(246,196,83,0.95)';
-    oCtx.lineWidth = 1;
-    oCtx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    oCtx.fillStyle = 'rgba(246,196,83,0.08)';
+    // Gold fill first, then a thicker stroke on top for clear visibility
+    // even at small minimap scales.
+    oCtx.fillStyle = 'rgba(246,196,83,0.22)';
     oCtx.fillRect(x, y, w, h);
+    oCtx.strokeStyle = 'rgba(246,196,83,1.0)';
+    oCtx.lineWidth = 2;
+    oCtx.strokeRect(x + 0.5, y + 0.5, Math.max(1, w - 1), Math.max(1, h - 1));
   };
 
   bus.on((ev) => {
