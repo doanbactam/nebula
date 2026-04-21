@@ -21,6 +21,8 @@ import {
   TECH_TREE,
   RIVAL_TICK_INTERVAL,
   RIVAL_SCORE_PER_TICK,
+  PASSIVE_FOOD_INTERVAL,
+  PASSIVE_FOOD_CAP,
 } from '../config.ts';
 import { TileMap } from '../world/TileMap.ts';
 import { BIOMES, type BiomeId, BIOME_ORDER } from '../world/Biomes.ts';
@@ -281,6 +283,9 @@ export class WorldScene extends Phaser.Scene {
     // tech research + rival god side-sim.
     this.advanceTech(worshippers);
     this.advanceRival(worshippers);
+
+    // passive food ecology — keeps civs fed when user idles at fast speeds.
+    this.advancePassiveFood();
 
     // era progression — score + worshipper gated (both conditions).
     const currentIdx = ERAS.indexOf(state.era);
@@ -569,10 +574,18 @@ export class WorldScene extends Phaser.Scene {
       r.aheadTicks = Math.max(0, r.aheadTicks - 1);
     }
 
-    // Periodic attack on a worshipper cluster.
-    if (r.sinceAttack >= RIVAL_TICK_INTERVAL && worshippers > 0) {
-      r.sinceAttack = 0;
-      this.rivalAttack();
+    // Periodic attack on a worshipper cluster. If there is nobody to
+    // smite, silently hold the counter so the feed doesn't spam strikes
+    // against an empty map.
+    if (r.sinceAttack >= RIVAL_TICK_INTERVAL) {
+      if (worshippers > 0) {
+        r.sinceAttack = 0;
+        this.rivalAttack();
+      } else {
+        // keep counter just below the threshold so the next real pop
+        // gets an immediate strike instead of waiting another cycle.
+        r.sinceAttack = RIVAL_TICK_INTERVAL - 1;
+      }
     }
 
     bus.emit({
@@ -612,16 +625,65 @@ export class WorldScene extends Phaser.Scene {
     const casualties = this.damageArea(tx, ty, r, dmg);
     this.spawnFx('fx-fire', tx, ty, r, 360);
     this.cameras.main.shake(320, 0.012);
-    bus.emit({
-      type: 'feed',
-      level: 'bad',
-      text: `${state.rival.name} smites your kin with ${kind.toUpperCase()} at (${tx},${ty}) — ${casualties} fell.`,
-    });
-    bus.emit({
-      type: 'toast',
-      level: 'bad',
-      text: `${state.rival.name} strikes!`,
-    });
+    // Only broadcast the alarm if the strike actually landed on a body.
+    // Otherwise it reads as cosmic noise ("— 0 fell") spam in the feed.
+    if (casualties > 0) {
+      bus.emit({
+        type: 'feed',
+        level: 'bad',
+        text: `${state.rival.name} smites your kin with ${kind.toUpperCase()} at (${tx},${ty}) — ${casualties} fell.`,
+      });
+      bus.emit({
+        type: 'toast',
+        level: 'bad',
+        text: `${state.rival.name} strikes!`,
+      });
+    } else {
+      bus.emit({
+        type: 'feed',
+        level: 'meta',
+        text: `${state.rival.name}'s ${kind} grazes empty stone near (${tx},${ty}).`,
+      });
+    }
+  }
+
+  /**
+   * Grazes a fresh sheep onto a random grass tile when the world is
+   * hungry and the passive herd cap hasn't been hit. Runs every
+   * PASSIVE_FOOD_INTERVAL ticks. Keeps civs self-sustaining at idle.
+   */
+  private advancePassiveFood(): void {
+    if (this.simTick % PASSIVE_FOOD_INTERVAL !== 0) return;
+    // Count current sheep and wolves.
+    let sheep = 0;
+    let wolves = 0;
+    for (const c of this.creatures) {
+      if (c.dead) continue;
+      if (c.species === 'sheep') sheep++;
+      else if (c.species === 'wolf' || c.species === 'dragon') wolves++;
+    }
+    if (sheep >= PASSIVE_FOOD_CAP) return;
+    // Pick up to 6 random tiles and take the first grass one with no
+    // predator neighbor. Cheap rejection sampler — world is only 80x50.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const x = (Math.random() * WORLD_W) | 0;
+      const y = (Math.random() * WORLD_H) | 0;
+      if (this.tileMap.biomeAt(x, y) !== 'grass') continue;
+      let predatorNear = false;
+      if (wolves > 0) {
+        for (const c of this.creatures) {
+          if (c.dead) continue;
+          if (c.species !== 'wolf' && c.species !== 'dragon') continue;
+          if (Math.hypot(c.x - x, c.y - y) < 4) {
+            predatorNear = true;
+            break;
+          }
+        }
+      }
+      if (predatorNear) continue;
+      this.spawnCreature('sheep', x + 0.5, y + 0.5);
+      return;
+    }
   }
 
   private neighborsOf(c: Creature, r: number): Creature[] {

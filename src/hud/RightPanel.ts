@@ -49,8 +49,10 @@ const CHAPTERS: QuestItem[] = [
   {
     id: 'rival',
     title: 'Ch.4 · Rival Pantheon',
-    desc: 'An invader god encroaches your map. Repel them.',
+    desc: 'Outscore Morvak by 500 and hold the lead for 16 in-game years to banish him.',
     status: 'locked',
+    progress: 0,
+    target: 16,
   },
   {
     id: 'convergence',
