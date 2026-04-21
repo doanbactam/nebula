@@ -5,14 +5,40 @@
  */
 
 export type GameEvent =
-  | { type: 'state'; faith: number; mana: number; year: number; era: string; rank: string; score: number }
+  | {
+      type: 'state';
+      faith: number;
+      mana: number;
+      year: number;
+      era: string;
+      rank: string;
+      score: number;
+      population: number;
+      worshippers: number;
+      season: string;
+    }
   | { type: 'tool-changed'; tool: string; sub?: string }
   | { type: 'speed-changed'; mult: number }
   | { type: 'selection'; target: SelectionInfo | null }
   | { type: 'toast'; text: string; level?: 'info' | 'good' | 'bad' | 'meta' }
-  | { type: 'quest'; id: string; status: 'started' | 'progress' | 'completed'; text: string }
+  | {
+      type: 'quest';
+      id: string;
+      status: 'started' | 'progress' | 'completed';
+      text: string;
+      progress?: number;
+      target?: number;
+    }
   | { type: 'feed'; text: string; level?: 'info' | 'good' | 'bad' | 'meta' }
-  | { type: 'minimap'; imageData: ImageData };
+  | { type: 'minimap'; imageData: ImageData }
+  | {
+      type: 'camera';
+      /** Normalized viewport rect in 0..1 space over the minimap. */
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+    };
 
 export interface SelectionInfo {
   kind: 'tile' | 'creature' | 'kingdom';

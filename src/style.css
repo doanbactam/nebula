@@ -160,12 +160,12 @@ body {
   top: 8px;
   left: 50%;
   transform: translateX(-50%);
-  min-width: 720px;
+  min-width: 820px;
   padding: 0;
 }
 #top-bar .panel-body {
   display: grid;
-  grid-template-columns: auto 1fr auto auto auto auto;
+  grid-template-columns: auto 1fr auto auto auto auto auto;
   gap: 18px;
   align-items: center;
   padding: 8px 14px;
@@ -213,6 +213,9 @@ body {
 }
 .stat.era .val {
   color: var(--gold);
+}
+.stat.pop .val {
+  color: var(--accent-2);
 }
 .bar {
   width: 96px;
@@ -420,20 +423,75 @@ body {
   padding: 8px;
   margin-bottom: 8px;
   background: var(--bg-deep);
+  transition: border-color 240ms ease, box-shadow 240ms ease;
 }
 .quest-item.active {
   border-color: var(--gold);
   box-shadow: 0 0 10px rgba(246, 196, 83, 0.2);
 }
+.quest-item.done {
+  border-color: var(--good);
+  box-shadow: 0 0 10px rgba(109, 224, 139, 0.18);
+  opacity: 0.9;
+}
+.quest-item .q-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 4px;
+}
 .quest-item .q-title {
   font-size: 10px;
   color: var(--gold);
-  margin-bottom: 4px;
+}
+.quest-item.done .q-title {
+  color: var(--good);
 }
 .quest-item .q-desc {
   font-size: 9px;
   color: var(--text-dim);
   line-height: 1.5;
+}
+.q-badge {
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  background: rgba(139, 124, 255, 0.08);
+  border: 1px solid var(--border-soft);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.q-badge.active {
+  color: var(--gold);
+  border-color: rgba(246, 196, 83, 0.4);
+  background: rgba(246, 196, 83, 0.08);
+}
+.q-badge.done {
+  color: var(--good);
+  border-color: rgba(109, 224, 139, 0.4);
+  background: rgba(109, 224, 139, 0.08);
+}
+.q-bar {
+  margin-top: 6px;
+  height: 4px;
+  background: rgba(139, 124, 255, 0.08);
+  border: 1px solid var(--border-soft);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.q-bar > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-2), var(--gold));
+  transition: width 220ms ease;
+}
+.q-prog {
+  margin-top: 3px;
+  font-size: 8px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  text-align: right;
 }
 
 /* ---------- BOTTOM BAR ---------- */
@@ -482,13 +540,24 @@ body {
 #minimap .panel-body {
   padding: 4px;
 }
-#minimap canvas {
-  display: block;
+.mini-wrap {
+  position: relative;
   width: 100%;
   height: 120px;
+}
+.mini-wrap canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
   image-rendering: pixelated;
   background: var(--bg-deep);
   border-radius: 3px;
+}
+.mini-wrap canvas.mini-overlay {
+  background: transparent;
+  pointer-events: none;
 }
 
 /* ---------- TOAST / TICKER ---------- */

@@ -12,6 +12,8 @@ interface QuestItem {
   title: string;
   desc: string;
   status: 'locked' | 'active' | 'progress' | 'done';
+  progress?: number;
+  target?: number;
 }
 
 const CHAPTERS: QuestItem[] = [
@@ -20,17 +22,21 @@ const CHAPTERS: QuestItem[] = [
     title: 'Ch.1 · Awakening',
     desc: 'Spawn your first civilization. Keep 12 sentient followers alive.',
     status: 'active',
+    progress: 0,
+    target: 12,
   },
   {
     id: 'first-faith',
     title: 'Ch.2 · First Faith',
     desc: 'Reach 200 Faith to be formally named on the Nebula ladder.',
     status: 'locked',
+    progress: 0,
+    target: 200,
   },
   {
-    id: 'tower',
-    title: 'Ch.3 · Tower of Trial',
-    desc: 'Survive a natural Nebula rift and keep your worshippers alive.',
+    id: 'portal',
+    title: 'Ch.3 · Nebula Rift',
+    desc: 'Open a Mystic Battleground portal in the Arcane era.',
     status: 'locked',
   },
   {
@@ -74,13 +80,36 @@ export function createRightPanel(): Panel {
   });
 
   function renderQuest(): string {
-    return CHAPTERS.map(
-      (q) => `
-        <div class="quest-item ${q.status === 'active' || q.status === 'progress' ? 'active' : ''}">
-          <div class="q-title">${q.title}</div>
+    return CHAPTERS.map((q) => {
+      const activeCls =
+        q.status === 'done'
+          ? 'done'
+          : q.status === 'active' || q.status === 'progress'
+          ? 'active'
+          : '';
+      const badge =
+        q.status === 'done'
+          ? '<span class="q-badge done">✓ done</span>'
+          : q.status === 'progress' || q.status === 'active'
+          ? '<span class="q-badge active">in progress</span>'
+          : '<span class="q-badge">locked</span>';
+      let bar = '';
+      if (q.target && (q.status === 'active' || q.status === 'progress' || q.status === 'done')) {
+        const pct = Math.min(100, Math.round(((q.progress ?? 0) / q.target) * 100));
+        bar = `
+          <div class="q-bar"><span style="width:${pct}%"></span></div>
+          <div class="q-prog">${q.progress ?? 0} / ${q.target}</div>`;
+      }
+      return `
+        <div class="quest-item ${activeCls}">
+          <div class="q-head">
+            <div class="q-title">${q.title}</div>
+            ${badge}
+          </div>
           <div class="q-desc">${q.desc}</div>
-        </div>`,
-    ).join('');
+          ${bar}
+        </div>`;
+    }).join('');
   }
 
   function renderInspector(): string {
@@ -180,7 +209,17 @@ export function createRightPanel(): Panel {
       const q = CHAPTERS.find((c) => c.id === ev.id);
       if (q) {
         if (ev.status === 'completed') q.status = 'done';
-        else if (ev.status === 'progress') q.status = 'progress';
+        else if (ev.status === 'started') q.status = 'active';
+        else if (ev.status === 'progress')
+          q.status = q.status === 'done' ? 'done' : 'progress';
+        if (typeof ev.progress === 'number') q.progress = ev.progress;
+        if (typeof ev.target === 'number') q.target = ev.target;
+        // auto-unlock next chapter when current is done
+        if (ev.status === 'completed') {
+          const i = CHAPTERS.findIndex((c) => c.id === ev.id);
+          const next = CHAPTERS[i + 1];
+          if (next && next.status === 'locked') next.status = 'active';
+        }
         if (tab === 'quest') refreshAll();
       }
     }

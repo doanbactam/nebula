@@ -28,8 +28,12 @@ export function createTopBar(): Panel {
         <span class="val" id="stat-era">Stone</span>
       </div>
       <div class="stat year">
-        <span>YEAR</span>
-        <span class="val" id="stat-year">0</span>
+        <span>YEAR · SEASON</span>
+        <span class="val" id="stat-year">0 · Spring</span>
+      </div>
+      <div class="stat pop">
+        <span>POP · WORSHIP</span>
+        <span class="val" id="stat-pop">0 · 0</span>
       </div>
       <div class="stat score">
         <span>SCORE</span>
@@ -43,7 +47,12 @@ export function createTopBar(): Panel {
   const $mana = panel.body.querySelector<HTMLElement>('#stat-mana-bar')!;
   const $era = panel.body.querySelector<HTMLElement>('#stat-era')!;
   const $year = panel.body.querySelector<HTMLElement>('#stat-year')!;
+  const $pop = panel.body.querySelector<HTMLElement>('#stat-pop')!;
   const $score = panel.body.querySelector<HTMLElement>('#stat-score')!;
+
+  let lastPop = 0;
+  let lastWorship = 0;
+  let lastSeason = 'Spring';
 
   const refresh = (): void => {
     $name.textContent = `God ${state.godName}`;
@@ -51,13 +60,19 @@ export function createTopBar(): Panel {
     $faith.textContent = Math.floor(state.faith).toLocaleString();
     $mana.style.width = `${(state.mana / MAX_MANA) * 100}%`;
     $era.textContent = state.era;
-    $year.textContent = state.year.toString();
+    $year.textContent = `${state.year} · ${lastSeason}`;
+    $pop.textContent = `${lastPop} · ${lastWorship}`;
     $score.textContent = state.score.toLocaleString();
   };
 
   refresh();
   bus.on((ev) => {
-    if (ev.type === 'state') refresh();
+    if (ev.type === 'state') {
+      lastPop = ev.population;
+      lastWorship = ev.worshippers;
+      lastSeason = ev.season;
+      refresh();
+    }
   });
   return panel;
 }
