@@ -11,9 +11,18 @@ export const FAITH_PER_TICK_PER_WORSHIPPER = 0.04;
 export const MANA_REGEN_PER_TICK = 0.6;
 
 /** Base hunger growth per tick before biome fertility is subtracted. */
-export const HUNGER_GAIN_PER_TICK = 0.55;
+export const HUNGER_GAIN_PER_TICK = 0.42;
 /** Threshold above which hunger starts damaging HP. */
-export const STARVE_THRESHOLD = 36;
+export const STARVE_THRESHOLD = 42;
+
+/**
+ * Every N sim-ticks the world spawns a passive food creature (sheep) on
+ * a random grass tile that has no predator nearby. Keeps civilizations
+ * self-sustaining when the user idles at fast speeds.
+ */
+export const PASSIVE_FOOD_INTERVAL = 80;
+/** Max concurrent sheep the passive spawner will maintain world-wide. */
+export const PASSIVE_FOOD_CAP = 40;
 
 /** Cost of each god power in mana. */
 export const POWER_COST: Record<string, number> = {
@@ -119,7 +128,7 @@ export const TECH_TREE: TechNode[] = [
     era: 'Bronze',
     cost: 320,
     desc: 'Fertile tiles feed more hungry mouths.',
-    effect: { kind: 'fertility', mult: 1.35 },
+    effect: { kind: 'fertility', mult: 1.55 },
   },
   {
     id: 'metal',
